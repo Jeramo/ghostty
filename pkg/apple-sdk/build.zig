@@ -102,9 +102,46 @@ pub fn addPaths(
         }
 
         // Cross-compiling to Darwin from a non-Darwin host.
-        // Zig only bundles macOS headers, so for other Apple platforms
-        // we leave the value as null to produce a descriptive error.
+        // Zig only bundles macOS headers; for iOS/tvOS/etc we accept a
+        // mounted Xcode SDK via the GHOSTTY_APPLE_SDK_<TAG> env var
+        // (e.g. GHOSTTY_APPLE_SDK_IOS=/sdks/iPhoneOS.sdk). This lets
+        // Linux containers cross-compile by mounting the host's SDK.
+        // Without the env var we fall through to the descriptive
+        // "not found" error.
         if (target.os.tag != .macos) {
+            const env_name: ?[]const u8 = switch (target.os.tag) {
+                .ios => "GHOSTTY_APPLE_SDK_IOS",
+                .tvos => "GHOSTTY_APPLE_SDK_TVOS",
+                .watchos => "GHOSTTY_APPLE_SDK_WATCHOS",
+                .visionos => "GHOSTTY_APPLE_SDK_VISIONOS",
+                else => null,
+            };
+            if (env_name) |name| {
+                if (std.process.getEnvVarOwned(b.allocator, name)) |sdk_path| {
+                    const include_dir = b.pathJoin(&.{ sdk_path, "usr", "include" });
+                    const library_dir = b.pathJoin(&.{ sdk_path, "usr", "lib" });
+                    const framework_dir = b.pathJoin(&.{ sdk_path, "System", "Library", "Frameworks" });
+
+                    const wf = b.addWriteFiles();
+                    const path = wf.add("libc.txt", b.fmt(
+                        \\include_dir={s}
+                        \\sys_include_dir={s}
+                        \\crt_dir={s}
+                        \\msvc_lib_dir=
+                        \\kernel32_lib_dir=
+                        \\gcc_dir=
+                        \\
+                    , .{ include_dir, include_dir, library_dir }));
+
+                    gop.value_ptr.* = .{ .native = .{
+                        .libc = path,
+                        .framework = framework_dir,
+                        .system_include = include_dir,
+                        .library = library_dir,
+                    } };
+                    break :init;
+                } else |_| {}
+            }
             gop.value_ptr.* = null;
             break :init;
         }
