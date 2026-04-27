@@ -256,9 +256,10 @@ fn initLib(
 
         // When cross-compiling from a non-Darwin host, Zig won't
         // auto-link libSystem the way it does on Darwin natively.
-        // Link it explicitly so libc syscalls resolve.
+        // Link it via the root module so the dependency surfaces in
+        // the final build-lib command.
         if (!builtin.os.tag.isDarwin()) {
-            lib.linkSystemLibrary2("System", .{ .preferred_link_mode = .dynamic });
+            zig.vt_c.linkSystemLibrary("System", .{ .preferred_link_mode = .dynamic });
         }
     }
 
