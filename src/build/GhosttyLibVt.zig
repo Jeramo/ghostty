@@ -248,9 +248,18 @@ fn initLib(
         // This is required for codesign and dynamic linking to work.
         lib.headerpad_max_install_names = true;
 
-        // If we're not cross compiling then we try to find the Apple
-        // SDK using standard Apple tooling.
-        if (builtin.os.tag.isDarwin()) try @import("apple_sdk").addPaths(b, lib);
+        // Find the Apple SDK. On a Darwin host we use xcrun; on a
+        // non-Darwin host we honour GHOSTTY_APPLE_SDK_<TAG> env vars
+        // (Pling-fork patch in pkg/apple-sdk/build.zig) so Linux
+        // containers can cross-compile by mounting the host's SDK.
+        try @import("apple_sdk").addPaths(b, lib);
+
+        // When cross-compiling from a non-Darwin host, Zig won't
+        // auto-link libSystem the way it does on Darwin natively.
+        // Link it explicitly so libc syscalls resolve.
+        if (!builtin.os.tag.isDarwin()) {
+            lib.linkSystemLibrary2("System", .{ .preferred_link_mode = .dynamic });
+        }
     }
 
     // Get our debug symbols (only for shared libs; static libs aren't linked)
